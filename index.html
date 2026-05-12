@@ -242,58 +242,133 @@ function renderHTML(blocks){
   return out.join('\n');
 }
 
-/* ── Word .docx ── */
+/* ── Word .docx Beaujon style ── */
 async function buildDocx(blocks,profileKey){
-  const {Document,Packer,Paragraph,TextRun,AlignmentType,BorderStyle,ShadingType,WidthType,Table,TableRow,TableCell,Header,Footer,ImageRun}=docx;
+  const {Document,Packer,Paragraph,TextRun,AlignmentType,BorderStyle,ShadingType,
+         WidthType,Header,Footer,ImageRun,LevelFormat,Table,TableRow,TableCell}=docx;
   const p=PROFILES[profileKey];
   const DARK='153D8A',MED='0063AF',GOLD='FFC000';
   const useArial=opts.font||profileKey==='dyslexie';
   const fnt=useArial?'Arial':'Calibri';
-  const fsz=useArial?28:24;
-  const lsp=useArial?360:276;
+  const fsz=useArial?28:26;
+  const lsp=useArial?360:300;
+
+  const logoBytes=Uint8Array.from(atob(LOGO_B64),c=>c.charCodeAt(0));
+  const chevBytes=Uint8Array.from(atob(CHEVRON_B64),c=>c.charCodeAt(0));
+  const today=new Date().toLocaleDateString('fr-FR');
+
   function runs(text){
     return text.split(/(\*\*.*?\*\*)/g).map(part=>{
-      if(part.startsWith('**')&&part.endsWith('**'))return new TextRun({text:part.slice(2,-2),bold:true,font:fnt,size:fsz});
+      if(part.startsWith('**')&&part.endsWith('**'))
+        return new TextRun({text:part.slice(2,-2),bold:true,font:fnt,size:fsz});
       return new TextRun({text:part,font:fnt,size:fsz});
     });
   }
-  const logoBytes=Uint8Array.from(atob(LOGO_B64),c=>c.charCodeAt(0));
-  const chevBytes=Uint8Array.from(atob(CHEVRON_B64),c=>c.charCodeAt(0));
+
+  function mkH1(text){
+    return new Paragraph({
+      children:[new TextRun({text,bold:true,color:'FFFFFF',size:36,font:'Calibri'})],
+      shading:{fill:MED,type:ShadingType.CLEAR},
+      spacing:{before:0,after:0},indent:{left:160},
+    });
+  }
+
+  function mkH2(text){
+    return new Paragraph({
+      children:[new TextRun({text,bold:true,color:'FFFFFF',size:28,font:'Calibri'})],
+      shading:{fill:MED,type:ShadingType.CLEAR},
+      spacing:{before:200,after:0},indent:{left:160},
+    });
+  }
+
+  function mkBox(text){
+    return new Paragraph({
+      children:[new TextRun({text:text.replace(/\*\*(.*?)\*\*/g,'$1'),font:fnt,size:fsz-2})],
+      shading:{fill:'FFF9E6',type:ShadingType.CLEAR},
+      border:{
+        top:{style:BorderStyle.SINGLE,size:4,color:GOLD,space:3},
+        bottom:{style:BorderStyle.SINGLE,size:4,color:GOLD,space:3},
+        left:{style:BorderStyle.THICK,size:14,color:GOLD,space:5},
+        right:{style:BorderStyle.SINGLE,size:4,color:GOLD,space:3},
+      },
+      spacing:{before:120,after:120},indent:{left:200,right:160},
+    });
+  }
+
   const children=[];let listItems=[];
-  function flushList(){if(!listItems.length)return;listItems.forEach(item=>children.push(new Paragraph({numbering:{reference:'bullets',level:0},children:runs(item),spacing:{after:80,line:lsp}})));listItems=[];}
-  const noBorder={style:BorderStyle.NONE,size:0,color:'FFFFFF'};
-  const noBorders={top:noBorder,bottom:noBorder,left:noBorder,right:noBorder,insideH:noBorder,insideV:noBorder};
+
+  function flushList(){
+    if(!listItems.length)return;
+    listItems.forEach(item=>children.push(new Paragraph({
+      numbering:{reference:'bullets',level:0},
+      children:runs(item),
+      spacing:{before:40,after:60,line:lsp},
+      indent:{left:880,hanging:360},
+    })));
+    listItems=[];
+  }
+
+  // Chevron image + H1 title at top
+  children.push(new Paragraph({
+    children:[new ImageRun({data:chevBytes,transformation:{width:36,height:36},type:'png'})],
+    spacing:{before:0,after:80},indent:{left:160},
+  }));
+
   blocks.forEach(b=>{
     if(b.type!=='li')flushList();
     switch(b.type){
-      case'h1':children.push(new Paragraph({children:[new TextRun({text:b.text,bold:true,color:DARK,size:40,font:'Calibri'})],spacing:{before:240,after:160}}));break;
-      case'h2':children.push(new Paragraph({children:[new TextRun({text:b.text,bold:true,color:MED,size:32,font:'Calibri'})],border:{bottom:{style:BorderStyle.SINGLE,size:4,color:'D0E4F7',space:4}},spacing:{before:200,after:100}}));break;
-      case'box':children.push(new Paragraph({children:[new TextRun({text:b.text.replace(/\*\*(.*?)\*\*/g,'$1'),size:fsz,font:fnt})],shading:{fill:'FFF9E6',type:ShadingType.CLEAR},border:{top:{style:BorderStyle.SINGLE,size:4,color:GOLD,space:2},bottom:{style:BorderStyle.SINGLE,size:4,color:GOLD,space:2},left:{style:BorderStyle.THICK,size:12,color:GOLD,space:4},right:{style:BorderStyle.SINGLE,size:4,color:GOLD,space:2}},spacing:{before:100,after:100},indent:{left:180}}));break;
+      case'h1':children.push(mkH1(b.text));break;
+      case'h2':children.push(mkH2(b.text));break;
+      case'box':children.push(mkBox(b.text));break;
       case'li':listItems.push(b.text);break;
-      case'sep':children.push(new Paragraph({border:{bottom:{style:BorderStyle.SINGLE,size:4,color:'EEF4FB',space:4}},spacing:{before:120,after:120},children:[new TextRun({text:'',size:fsz})]}));break;
-      default:children.push(new Paragraph({children:runs(b.text),spacing:{before:60,after:80,line:lsp},alignment:AlignmentType.LEFT}));
+      case'sep':children.push(new Paragraph({
+        border:{bottom:{style:BorderStyle.SINGLE,size:4,color:'D0E4F7',space:4}},
+        spacing:{before:160,after:160},children:[new TextRun({text:'',size:fsz})],
+      }));break;
+      default:children.push(new Paragraph({
+        children:runs(b.text),
+        spacing:{before:80,after:100,line:lsp},
+        indent:{left:160},alignment:AlignmentType.LEFT,
+      }));
     }
   });
   flushList();
-  const today=new Date().toLocaleDateString('fr-FR');
+
   const doc=new Document({
-    numbering:{config:[{reference:'bullets',levels:[{level:0,format:'bullet',text:'•',alignment:AlignmentType.LEFT,style:{paragraph:{indent:{left:720,hanging:360}}}}]}]},
+    numbering:{config:[{reference:'bullets',levels:[{
+      level:0,format:LevelFormat.BULLET,text:'•',alignment:AlignmentType.LEFT,
+      style:{paragraph:{indent:{left:880,hanging:360}}}
+    }]}]},
+    styles:{default:{document:{run:{font:fnt,size:fsz,color:'333333'}}}},
     sections:[{
-      properties:{page:{size:{width:11906,height:16838},margin:{top:1134,bottom:1134,left:1134,right:851}}},
+      properties:{page:{
+        size:{width:11906,height:16838},
+        margin:{top:1200,bottom:1600,left:1800,right:851}
+      }},
       headers:{default:new Header({children:[
-        new Table({width:{size:9638,type:WidthType.DXA},columnWidths:[900,8738],borders:noBorders,rows:[new TableRow({children:[
-          new TableCell({width:{size:900,type:WidthType.DXA},shading:{fill:DARK,type:ShadingType.CLEAR},margins:{top:80,bottom:80,left:80,right:80},children:[new Paragraph({children:[new ImageRun({data:chevBytes,transformation:{width:28,height:28},type:'png'})],alignment:AlignmentType.CENTER})]}),
-          new TableCell({width:{size:8738,type:WidthType.DXA},margins:{top:60,bottom:60,left:180,right:80},children:[
-            new Paragraph({children:[new TextRun({text:'IFSI — Assistance Publique Hôpitaux de Paris',bold:true,color:DARK,size:18,font:'Calibri'})]}),
-            new Paragraph({children:[new TextRun({text:'Document adapté · Profil DYS : '+p.label+' · '+today,color:'666666',size:16,font:'Calibri'})]}),
-          ]}),
-        ]})]}),
+        new Paragraph({
+          children:[
+            new TextRun({text:'CFDC – IFSI BEAUJON',bold:true,size:16,font:'Calibri',color:'444444'}),
+            new TextRun({text:'\t'+today+'\tDocument adapté · '+p.label,size:16,font:'Calibri',color:'888888'}),
+          ],
+          tabStops:[{type:'center',position:4680},{type:'right',position:9026}],
+          border:{bottom:{style:BorderStyle.SINGLE,size:2,color:'DDDDDD',space:4}},
+          spacing:{before:60,after:80},
+        }),
       ]})},
       footers:{default:new Footer({children:[
-        new Paragraph({children:[
-          new ImageRun({data:logoBytes,transformation:{width:110,height:32},type:'png'}),
-          new TextRun({text:'     V2 · '+today+' · Adapté pour : '+p.label,size:16,color:'888888',font:'Calibri'}),
-        ],border:{top:{style:BorderStyle.SINGLE,size:2,color:'DDDDDD',space:4}},spacing:{before:80}}),
+        new Paragraph({
+          children:[
+            new ImageRun({data:logoBytes,transformation:{width:110,height:32},type:'png'}),
+            new TextRun({text:'\t',size:16}),
+            new TextRun({text:'V2 · '+today+' · Adapté pour : '+p.label,size:16,color:'888888',font:'Calibri'}),
+            new TextRun({text:'\t',size:16}),
+            new ImageRun({data:chevBytes,transformation:{width:18,height:18},type:'png'}),
+          ],
+          tabStops:[{type:'center',position:4513},{type:'right',position:9026}],
+          border:{top:{style:BorderStyle.SINGLE,size:2,color:'DDDDDD',space:4}},
+          spacing:{before:80},
+        }),
       ]})},
       children
     }]
